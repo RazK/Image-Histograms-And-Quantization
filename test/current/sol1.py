@@ -3,7 +3,6 @@ from skimage.color import rgb2gray
 from matplotlib import pyplot as plt
 from scipy.misc import imread as imread
 
-
 # Constants
 PIXEL_INTENSITY_MAX = 255
 PIXEL_INTENSITIES = PIXEL_INTENSITY_MAX + 1
@@ -187,12 +186,12 @@ def quantize(im_orig, n_quant, n_iter):
     """
     im_eq, hist_orig, hist_eq = histogram_equalize(im_orig)
     # Initial guess: divide intensities equally
-    z_arr = np.round(np.linspace(0, PIXEL_INTENSITY_MAX, num=n_quant)).astype(
-        np.uint8)
-    q_arr = np.arange(n_quant-1)
+    q_arr = np.arange(n_quant)
+    z_arr = np.round(np.linspace(0, PIXEL_INTENSITY_MAX,
+                                 num=len(q_arr) + 1)).astype(np.uint8)
 
     # Initialize errors array
-    error = np.array([0]*n_iter)
+    error = np.array([0] * n_iter)
     """
     # Space q values in the middle of z sections
     space = z_arr[1]-z_arr[0]
@@ -207,16 +206,16 @@ def quantize(im_orig, n_quant, n_iter):
         error_j = 0
 
         # Calculate q values for current z
-        for i in range(len(z_arr)-1):
-            start, end = z_arr[i], z_arr[i+1]
-            szp = sum(hist_orig[start:end] * np.arange(start,end))
+        for i in range(len(z_arr) - 1):
+            start, end = z_arr[i], z_arr[i + 1]
+            szp = sum(hist_orig[start:end] * np.arange(start, end))
             sp = sum(hist_orig[start:end])
-            q_arr[i] = szp/sp
-            error_j += np.sum((hist_orig[start:end]-q_arr[i])**2)
+            q_arr[i] = szp / sp
+            error_j += np.sum((hist_orig[start:end] - q_arr[i]) ** 2)
 
         # Calculate z values by updated q
-        for i in range(1,len(q_arr)):
-            z_arr[i] = (q_arr[i-1]+q_arr[i])/2
+        for i in range(1, len(q_arr)):
+            z_arr[i] = (q_arr[i - 1] + q_arr[i]) / 2
 
         # Stop iterating upon convergence
         if (np.array_equal(z_arr, z_arr_prev)):
@@ -230,17 +229,38 @@ def quantize(im_orig, n_quant, n_iter):
         lut = np.arange(PIXEL_INTENSITIES)
         for i in range(len(z_arr) - 1):
             start, end = z_arr[i], z_arr[i + 1]
-            lut[start:end] = q_arr[i]
+            lut[start:end + 1] = q_arr[i]
 
-        # Map original intensity values to their quantized values
-        im_quant = np.array(
-            list(map(lambda i: cdf_n[i], intensities))).astype(
+        if (is_greyscale(im_orig)):
+            intensities = im_orig
+        else:
+            yiq = rgb2yiq(im_orig)
+            intensities = yiq[..., INDEX_Y]
+
+        # Translate [0,1] intensity range to [0,255] integer range
+        intensities = np.round(intensities * PIXEL_INTENSITY_MAX).astype(
             np.uint8)
 
+        # Map intensity values to their quantized values
+        intensities_quant = np.array(list(map(lambda i: lut[i],
+                                              intensities))).astype(np.uint8)
+        # Translate [0,255] intensity range to [0,1]
+        intensities_quant = intensities_quant / PIXEL_INTENSITIES
+
+        if (is_greyscale(im_orig)):
+            im_quant = intensities_quant
+        else:
+            yiq[..., INDEX_Y] = intensities_quant
+            im_quant = yiq2rgb(yiq)
+
+        return im_quant, error
     pass
 
+
 TEST_IMAGE = "external\\Low Contrast.jpg"
-im = read_image(TEST_IMAGE, MODE_RGB)
+im = read_image(TEST_IMAGE, MODE_GRAYSCALE)
 im_eq = histogram_equalize(im)[0]
-#display_image(im_eq, plt.cm.gray)
-quantize(im, 5, 100)
+im_quant = quantize(im, 3, 100)[0]
+display_image(im, plt.cm.gray)
+display_image(im_eq, plt.cm.gray)
+display_image(im_quant, plt.cm.gray)
