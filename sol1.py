@@ -185,29 +185,35 @@ def quantize(im_orig, n_quant, n_iter):
                     quantization procedure.
     """
     im_eq, hist_orig, hist_eq = histogram_equalize(im_orig)
-    # Initial guess: divide intensities equally
+
+    # Distribute pixels ranges by equal cumulative sum
+    z_arr = np.arange(n_quant + 1)
+    cdf = hist_orig.cumsum()
+    z_space = cdf[-1] / n_quant
+    z_cumsums = np.linspace(z_space, cdf[-1], n_quant)
+    for i in range(n_quant):
+        z_arr[i + 1] = np.argmin(cdf < z_cumsums[i])
+
+    # Initial guess: q are medians of each range
     q_arr = np.arange(n_quant)
-    z_arr = np.round(np.linspace(0, PIXEL_INTENSITY_MAX,
-                                 num=len(q_arr) + 1)).astype(np.uint8)
+    for i in range(n_quant):
+        start, end = z_arr[i], z_arr[i + 1] + 1
+        q_arr[i] = (start + end) / 2
 
     # Initialize errors array
     error = np.array([0] * n_iter)
-    """
-    # Space q values in the middle of z sections
-    space = z_arr[1]-z_arr[0]
-    q_arr = np.round(np.linspace(space/2, PIXEL_INTENSITY_MAX-space/2,
-                                 n_quant-1)).astype(np.uint8)
-    """
-    for j in range(n_iter):
-        # Store previous z values to check for convergence
-        z_arr_prev = z_arr.copy()
 
+    # Iterate until n_iter exceeded or z_arr did not change
+    for j in range(n_iter):
         # Reset iteration error
         error_j = 0
 
+        # Store previous z values to check for convergence
+        z_arr_prev = z_arr.copy()
+
         # Calculate q values for current z
         for i in range(len(z_arr) - 1):
-            start, end = z_arr[i], z_arr[i + 1]
+            start, end = z_arr[i], z_arr[i + 1] + 1
             szp = sum(hist_orig[start:end] * np.arange(start, end))
             sp = sum(hist_orig[start:end])
             q_arr[i] = szp / sp
@@ -244,7 +250,7 @@ def quantize(im_orig, n_quant, n_iter):
         # Map intensity values to their quantized values
         intensities_quant = np.array(list(map(lambda i: lut[i],
                                               intensities))).astype(np.uint8)
-        # Translate [0,255] intensity range to [0,1]
+        # Translate [0,255] intensity range back to [0,1]
         intensities_quant = intensities_quant / PIXEL_INTENSITIES
 
         if (is_greyscale(im_orig)):
@@ -253,14 +259,14 @@ def quantize(im_orig, n_quant, n_iter):
             yiq[..., INDEX_Y] = intensities_quant
             im_quant = yiq2rgb(yiq)
 
-        return im_quant, error
-    pass
+    # Woohoo!
+    return im_quant, error
 
 
-TEST_IMAGE = "external\\Low Contrast.jpg"
+TEST_IMAGE = "test\\external\\jerusalem.jpg"
 im = read_image(TEST_IMAGE, MODE_GRAYSCALE)
 im_eq = histogram_equalize(im)[0]
-im_quant = quantize(im, 3, 100)[0]
+im_quant = quantize(im, 40, 100)[0]
 display_image(im, plt.cm.gray)
 display_image(im_eq, plt.cm.gray)
 display_image(im_quant, plt.cm.gray)
