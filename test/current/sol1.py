@@ -1,7 +1,10 @@
+import timeit
+
 import numpy as np
 from scipy.misc import imread as imread
 from scipy.interpolate import interp1d
-from skimage.color import rgb2gray
+from skimage.color import rgb2gray, rgb2yiq as skimage_rgb2yiq, yiq2rgb as \
+    skimage_yiq2rgb
 from matplotlib import pyplot as plt
 
 # Constants
@@ -40,15 +43,15 @@ def read_image(filename, representation):
     """
     im = imread(filename)
     im_float = im.astype(np.float64)
-    im_float /= PIXEL_INTENSITY_MAX
+    if (representation == MODE_GRAYSCALE):
+        im_float = rgb2gray(im_float)
+    return im_float / PIXEL_INTENSITY_MAX
 
-    if (representation == MODE_RGB):
-        return im_float
-    elif (representation == MODE_GRAYSCALE):
-        return rgb2gray(im_float)
-    else:
-        # Whoops! shouldn't get here (invalid input)
-        return None
+
+def display_image(image, cmap=None):
+    clipped = np.clip(image[:, :, :], 0, 1)
+    plt.imshow(clipped, cmap=cmap)
+    plt.show()
 
 
 def imdisplay(filename, representation):
@@ -66,8 +69,7 @@ def imdisplay(filename, representation):
     cmap = None
     if (representation == MODE_GRAYSCALE):
         cmap = plt.cm.gray
-    plt.imshow(im, cmap=cmap)
-    plt.show()
+    display_image(im, cmap)
 
 
 def rgb2yiq(imRGB):
@@ -76,7 +78,7 @@ def rgb2yiq(imRGB):
     :param imRGB:   an RGB image.
     :return:        an YIQ image with the same dimensions as the input.
     """
-    return np.dot(imRGB, MATRIX_RGB2YIQ)
+    return np.dot(imRGB, MATRIX_RGB2YIQ.T)
 
 
 def yiq2rgb(imYIQ):
@@ -85,7 +87,7 @@ def yiq2rgb(imYIQ):
     :param imRGB:   an RGB image.
     :return:        an YIQ image with the same dimensions as the input.
     """
-    return np.dot(imYIQ, MATRIX_YIQ2RGB)
+    return np.dot(imYIQ, MATRIX_YIQ2RGB.T)
 
 
 def histogram_equalize(im_orig):
@@ -100,18 +102,32 @@ def histogram_equalize(im_orig):
                     hist_eq - is a 256 bin histogram of the equalized image
                     (array with shape (256,) ).
     """
-    yiq = rgb2yiq(im_orig)
-    hist_orig, bins = np.histogram(yiq[..., INDEX_Y], 256,
-                                   (0, 1))
+    # Convert image to YIQ for equalizing Y values
+    yiq = skimage_rgb2yiq(im_orig) * PIXEL_INTENSITY_MAX
+    y = yiq[..., INDEX_Y].astype(np.uint8)
+
+    # Build cumulative histogram of Y values
+    hist_orig, bins = np.histogram(y, 256, (0, 255))
     cdf = np.cumsum(hist_orig)
-    cdf = PIXEL_INTENSITY_MAX * cdf / cdf[-1]
-    yiq_eq = np.interp(yiq, bins[:-1], cdf) / PIXEL_INTENSITY_MAX
-    hist_eq, bins = np.histogram(a=yiq, bins=256)
-    im_eq = yiq2rgb(yiq_eq)
+    cdf_n = (cdf * PIXEL_INTENSITY_MAX / cdf[-1]).astype(np.uint8)
+
+    # Map original y values to their equalized values
+    y_eq = np.array(list(map(lambda y: cdf_n[y], y))).astype(np.uint8)
+
+    # Calculate histogram of equalized Y values
+    hist_eq, bins = np.histogram(y_eq, 256)
+
+    # Update Y with equalized values
+    yiq[..., INDEX_Y] = y_eq
+
+    # Back to RGB
+    im_eq = skimage_yiq2rgb(yiq / PIXEL_INTENSITY_MAX)
+
+    # Done!
     return [im_eq, hist_orig, hist_eq]
 
 
-TEST_IMAGE = "external\\jerusalem.jpg"
+TEST_IMAGE = "external\\Low Contrast.jpg"
 im = read_image(TEST_IMAGE, MODE_RGB)
-plt.imshow(histogram_equalize(im)[0])
-plt.show()
+im_eq = histogram_equalize(im)[0]
+display_image(im_eq)
