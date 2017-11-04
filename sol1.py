@@ -261,12 +261,3 @@ def quantize(im_orig, n_quant, n_iter):
 
     # Woohoo!
     return im_quant, error
-
-
-TEST_IMAGE = "test\\external\\jerusalem.jpg"
-im = read_image(TEST_IMAGE, MODE_GRAYSCALE)
-im_eq = histogram_equalize(im)[0]
-im_quant = quantize(im, 40, 100)[0]
-display_image(im, plt.cm.gray)
-display_image(im_eq, plt.cm.gray)
-display_image(im_quant, plt.cm.gray)
