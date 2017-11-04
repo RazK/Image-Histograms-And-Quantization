@@ -105,7 +105,7 @@ def histogram_equalize(im_orig):
                                    (0, 1))
     cdf = np.cumsum(hist_orig)
     cdf = PIXEL_INTENSITY_MAX * cdf / cdf[-1]
-    #yiq_eq = np.interp(yiq, bins[:-1], cdf) / PIXEL_INTENSITY_MAX
+    yiq_eq = np.interp(yiq, bins[:-1], cdf) / PIXEL_INTENSITY_MAX
     hist_eq, bins = np.histogram(a=yiq, bins=256)
     im_eq = yiq2rgb(yiq_eq)
     return [im_eq, hist_orig, hist_eq]
