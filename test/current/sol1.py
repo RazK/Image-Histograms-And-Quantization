@@ -225,7 +225,7 @@ def quantize(im_orig, n_quant, n_iter):
 
         # Stop iterating upon convergence
         if (np.array_equal(z_arr, z_arr_prev)):
-            print("Yay! j={}".format(j))
+            # Yay! we have converged! :-D
             break
 
         # Record iteration error
