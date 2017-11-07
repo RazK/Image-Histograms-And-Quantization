@@ -104,6 +104,29 @@ def yiq2rgb(imYIQ):
     return np.dot(imYIQ[:, :, :PIXEL_CHANNELS_RGB], MATRIX_YIQ2RGB.T)
 
 
+def intensity_histogram_translated(intensities, translate=True):
+    """
+    Returns a histogram of the given intensities translated to [0, 255] range.
+    Translates the intensities from [0,1] to [0, 255] if translate=True.
+    :param intensities: An array of intensities, in [0, 1] range by default.
+    :param translate:   Flag if the intensities are given in [0, 1] range.
+                        Should be False if the given intensities are already
+                        in [0, 255] range.
+    :return:    A histogram of the intensities, in [0, 255] range.
+    """
+    # Translate [0,1] intensity range to [0,255] integer range
+    if (translate):
+        intensities = np.round(intensities * PIXEL_INTENSITY_MAX).astype(
+            np.uint8)
+
+    # Build cumulative histogram of pixel intensities
+    hist, bins = np.histogram(a=intensities, bins=PIXEL_INTENSITIES,
+                              range=PIXEL_RANGE)
+
+    # Don't give a damn about bins, return hist
+    return hist
+
+
 def intensity_equalize(intensities):
     """
     Performs histogram equalization of the given pixel intensities.
@@ -117,11 +140,11 @@ def intensity_equalize(intensities):
                         equalized intensities (array with shape (256,) ).
     """
     # Translate [0,1] intensity range to [0,255] integer range
-    intensities = np.round(intensities * PIXEL_INTENSITY_MAX).astype(np.uint8)
+    translated_intensities = np.round(intensities * PIXEL_INTENSITY_MAX).astype(
+        np.uint8)
 
     # Build cumulative histogram of pixel intensities
-    hist_orig, bins = np.histogram(a=intensities, bins=PIXEL_INTENSITIES,
-                                   range=PIXEL_RANGE)
+    hist_orig = intensity_histogram_translated(translated_intensities, False)
     cdf = np.cumsum(hist_orig)
 
     # Normalize cumulative histogram:
@@ -129,8 +152,8 @@ def intensity_equalize(intensities):
     cdf_n = (cdf * PIXEL_INTENSITY_MAX / cdf[-1]).astype(np.uint8)
 
     # Map original intensity values to their equalized values
-    intensity_eq = np.array(list(map(lambda i: cdf_n[i], intensities))).astype(
-        np.uint8)
+    intensity_eq = np.array(list(map(lambda i: cdf_n[i],
+                                     translated_intensities))).astype(np.uint8)
 
     # Calculate histogram of equalized intensity values
     hist_eq, bins = np.histogram(intensity_eq, PIXEL_INTENSITIES)
@@ -184,7 +207,12 @@ def quantize(im_orig, n_quant, n_iter):
                     the total intensities error for each iteration of the
                     quantization procedure.
     """
-    im_eq, hist_orig, hist_eq = histogram_equalize(im_orig)
+    # Build histogram of pixel intensities
+    if (is_greyscale(im_orig)):
+        hist_orig = intensity_histogram_translated(im_orig)
+    else:
+        yiq = rgb2yiq(im_orig)
+        hist_orig = intensity_histogram_translated(yiq[..., INDEX_Y])
 
     # Distribute pixels ranges by equal cumulative sum
     z_arr = np.arange(n_quant + 1)
