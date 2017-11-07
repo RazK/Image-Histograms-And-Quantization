@@ -231,33 +231,33 @@ def quantize(im_orig, n_quant, n_iter):
         # Record iteration error
         error[j] = error_j
 
-        # Build quantization lookup table
-        lut = np.arange(PIXEL_INTENSITIES)
-        for i in range(len(z_arr) - 1):
-            start, end = z_arr[i], z_arr[i + 1]
-            lut[start:end + 1] = q_arr[i]
+    # Build quantization lookup table
+    lut = np.arange(PIXEL_INTENSITIES)
+    for i in range(len(z_arr) - 1):
+        start, end = z_arr[i], z_arr[i + 1]
+        lut[start:end + 1] = q_arr[i]
 
-        if (is_greyscale(im_orig)):
-            intensities = im_orig
-        else:
-            yiq = rgb2yiq(im_orig)
-            intensities = yiq[..., INDEX_Y]
+    if (is_greyscale(im_orig)):
+        intensities = im_orig
+    else:
+        yiq = rgb2yiq(im_orig)
+        intensities = yiq[..., INDEX_Y]
 
-        # Translate [0,1] intensity range to [0,255] integer range
-        intensities = np.round(intensities * PIXEL_INTENSITY_MAX).astype(
-            np.uint8)
+    # Translate [0,1] intensity range to [0,255] integer range
+    intensities = np.round(intensities * PIXEL_INTENSITY_MAX).astype(
+        np.uint8)
 
-        # Map intensity values to their quantized values
-        intensities_quant = np.array(list(map(lambda i: lut[i],
-                                              intensities))).astype(np.uint8)
-        # Translate [0,255] intensity range back to [0,1]
-        intensities_quant = intensities_quant / PIXEL_INTENSITIES
+    # Map intensity values to their quantized values
+    intensities_quant = np.array(list(map(lambda i: lut[i],
+                                          intensities))).astype(np.uint8)
+    # Translate [0,255] intensity range back to [0,1]
+    intensities_quant = intensities_quant / PIXEL_INTENSITIES
 
-        if (is_greyscale(im_orig)):
-            im_quant = intensities_quant
-        else:
-            yiq[..., INDEX_Y] = intensities_quant
-            im_quant = yiq2rgb(yiq)
+    if (is_greyscale(im_orig)):
+        im_quant = intensities_quant
+    else:
+        yiq[..., INDEX_Y] = intensities_quant
+        im_quant = yiq2rgb(yiq)
 
     # Woohoo!
     return im_quant, error
