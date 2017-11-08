@@ -1,4 +1,5 @@
 import numpy as np
+from builtins import len
 from skimage.color import rgb2gray
 from matplotlib import pyplot as plt
 from scipy.misc import imread as imread
@@ -21,14 +22,23 @@ MATRIX_RGB2YIQ = np.array([[0.299, 0.587, 0.114],
                            [0.212, -0.523, 0.311]])
 MATRIX_YIQ2RGB = np.linalg.inv(MATRIX_RGB2YIQ)
 
-# YIQ Properties
-INDEX_Y = 0
+# Picture dimension roperties
+DIMENSIONS_GREYSCALE = 2  # dimensions of GREYSCALE image
+DIMENSIONS_RGB = 3  # dimensions of RGB image
 
-# GREYSCALE Properties
-GREYSCALE_AXES = 2
+# RGB, RGBA properties
+RED = 0
+GREEN = 1
+BLUE = 2
+ALPHA = 3
+RGB_CHANNELS = [RED, GREEN, BLUE]
+RGBA_CHANNELS = [RED, GREEN, BLUE, ALPHA]
 
-# RGB Properties
-RGB_AXES = 3
+# YIQ properties
+Y = 0
+I = 1
+Q = 2
+YIQ_CHANNELS = [Y, I, Q]
 
 
 # Methods
@@ -43,10 +53,11 @@ def read_image(filename, representation):
                             .float64 with intensities normalized to the
                             range [0,1]
     """
-    im = imread(filename)
-    im_float = im.astype(np.float64)
     if (representation == MODE_GRAYSCALE):
-        im_float = rgb2gray(im_float)
+        im = rgb2gray(imread(filename))
+    else:
+        im = imread(filename, "RGB")
+    im_float = im.astype(np.float64)
     return im_float / PIXEL_INTENSITY_MAX
 
 
@@ -81,7 +92,7 @@ def is_greyscale(image):
     :return:        true if image is greyscale, otherwise false
     """
     # Image is just (width * height) with no pixel axis
-    return (len(image.shape) == GREYSCALE_AXES)
+    return (len(image.shape) == DIMENSIONS_GREYSCALE)
 
 
 def rgb2yiq(imRGB):
@@ -91,7 +102,7 @@ def rgb2yiq(imRGB):
     :param imRGB:   an RGB image.
     :return:        an YIQ image with the same dimensions as the input.
     """
-    return np.dot(imRGB[:, :, :PIXEL_CHANNELS_RGB], MATRIX_RGB2YIQ.T)
+    return np.dot(imRGB[:, :, :len(RGB_CHANNELS)], MATRIX_RGB2YIQ.T)
 
 
 def yiq2rgb(imYIQ):
@@ -101,7 +112,7 @@ def yiq2rgb(imYIQ):
     :param imRGB:   an RGB image.
     :return:        an YIQ image with the same dimensions as the input.
     """
-    return np.dot(imYIQ[:, :, :PIXEL_CHANNELS_RGB], MATRIX_YIQ2RGB.T)
+    return np.dot(imYIQ[:, :, :len(RGB_CHANNELS)], MATRIX_YIQ2RGB.T)
 
 
 def intensity_histogram_translated(intensities, translate=True):
@@ -140,7 +151,8 @@ def intensity_equalize(intensities):
                         equalized intensities (array with shape (256,) ).
     """
     # Translate [0,1] intensity range to [0,255] integer range
-    translated_intensities = np.round(intensities * PIXEL_INTENSITY_MAX).astype(
+    translated_intensities = np.round(
+        intensities * PIXEL_INTENSITY_MAX).astype(
         np.uint8)
 
     # Build cumulative histogram of pixel intensities
@@ -183,16 +195,16 @@ def histogram_equalize(im_orig):
     else:
         # Convert RGB [0-1] to YIQ [0-255] for equalizing Y values
         yiq = rgb2yiq(im_orig)
-        y_eq, hist_orig, hist_eq = intensity_equalize(yiq[..., INDEX_Y])
+        y_eq, hist_orig, hist_eq = intensity_equalize(yiq[..., Y])
 
         # Update Y with equalized values and go back to RGB
-        yiq[..., INDEX_Y] = y_eq
+        yiq[..., Y] = y_eq
         im_eq = yiq2rgb(yiq)
 
     return [im_eq, hist_orig, hist_eq]
 
 
-def quantize(im_orig, n_quant, n_iter):
+def _quantize(im_orig, n_quant, n_iter):
     """
     Performs optimal quantization of a given greyscale or RGB image.
     :param im_orig: input grayscale or RGB image to be quantized (float64
@@ -201,18 +213,20 @@ def quantize(im_orig, n_quant, n_iter):
                     have.
     :param n_iter:  maximum number of iterations of the optimization
                     procedure (may converge earlier.)
-    :return:        list [im_quant, error] where:
+    :return:        list [im_quant, error, z_arr] where:
                     im_quant - is the quantized output image.
                     error - is an array with shape (n_iter,) (or less) of
                     the total intensities error for each iteration of the
                     quantization procedure.
+                    z_arr - an array of intensity segments mapped to
+                    respective q values
     """
     # Build histogram of pixel intensities
     if (is_greyscale(im_orig)):
         hist_orig = intensity_histogram_translated(im_orig)
     else:
         yiq = rgb2yiq(im_orig)
-        hist_orig = intensity_histogram_translated(yiq[..., INDEX_Y])
+        hist_orig = intensity_histogram_translated(yiq[..., Y])
 
     # Distribute pixels ranges by equal cumulative sum
     z_arr = np.arange(n_quant + 1)
@@ -269,7 +283,7 @@ def quantize(im_orig, n_quant, n_iter):
         intensities = im_orig
     else:
         yiq = rgb2yiq(im_orig)
-        intensities = yiq[..., INDEX_Y]
+        intensities = yiq[..., Y]
 
     # Translate [0,1] intensity range to [0,255] integer range
     intensities = np.round(intensities * PIXEL_INTENSITY_MAX).astype(
@@ -284,8 +298,59 @@ def quantize(im_orig, n_quant, n_iter):
     if (is_greyscale(im_orig)):
         im_quant = intensities_quant
     else:
-        yiq[..., INDEX_Y] = intensities_quant
+        yiq[..., Y] = intensities_quant
         im_quant = yiq2rgb(yiq)
 
     # Woohoo!
-    return im_quant, error
+    return im_quant, error, z_arr
+
+
+def quantize(im_orig, n_quant, n_iter):
+    """
+    Performs optimal quantization of a given greyscale or RGB image.
+    :param im_orig: input grayscale or RGB image to be quantized (float64
+                    image with values in [0, 1])
+    :param n_quant: number of intensities the output im_quant image should
+                    have.
+    :param n_iter:  maximum number of iterations of the optimization
+                    procedure (may converge earlier.)
+    :return:        list [im_quant, error] where:
+                    im_quant - is the quantized output image.
+                    error - is an array with shape (n_iter,) (or less) of
+                    the total intensities error for each iteration of the
+                    quantization procedure.
+    """
+    return _quantize(im_orig, n_quant, n_iter)[0:2]  # drop the z_arr
+
+
+def quantize_rgb(im_orig, n_quant, n_iter):
+    """
+        Performs optimal RGB quantization of a given greyscale or RGB image.
+        :param im_orig: input grayscale or RGB image to be quantized (float64
+                        image with values in [0, 1])
+        :param n_quant: number of intensities the output im_quant image should
+                        have.
+        :param n_iter:  maximum number of iterations of the optimization
+                        procedure (may converge earlier.)
+        :return:        list [im_quant, error] where:
+                        im_quant - is the quantized output image.
+                        error - is an array with shape (n_iter,) (or less) of
+                        the total intensities error for each iteration of the
+                        quantization procedure.
+        """
+    # Get array of z segments after quantization of yiq intensities
+    z_arr = _quantize(im_orig, n_quant, n_iter)[2]
+
+    # Calculate histogram of each RGB channel
+    histograms = np.arange(len(RGB_CHANNELS))
+    for channel in RGB_CHANNELS:
+        histograms[channel] = intensity_histogram_translated(
+            im_orig[..., channel])
+
+    # For each channel in RGB, calculate q values for each z segment
+    for channel in range(DIMENSIONS_RGB):
+        for i in range(len(z_arr) - 1):
+            start, end = z_arr[i], z_arr[i + 1] + 1
+            szp = sum(histograms[channel, start:end] * np.arange(start, end))
+            sp = sum(histograms[channel, start:end])
+
