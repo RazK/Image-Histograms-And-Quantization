@@ -53,11 +53,10 @@ def read_image(filename, representation):
                             .float64 with intensities normalized to the
                             range [0,1]
     """
-    if (representation == MODE_GRAYSCALE):
-        im = rgb2gray(imread(filename))
-    else:
-        im = imread(filename, "RGB")
+    im = imread(filename)
     im_float = im.astype(np.float64)
+    if (representation == MODE_GRAYSCALE):
+        im_float = rgb2gray(im_float)
     return im_float / PIXEL_INTENSITY_MAX
 
 
@@ -161,10 +160,10 @@ def intensity_equalize(intensities):
 
     # Normalize cumulative histogram:
     # C[k] = round(((C[k] / NUM_OF_PIXELS) * PIXEL_INTENSITY_MAX))
-    cdf_n = (cdf * PIXEL_INTENSITY_MAX / cdf[-1]).astype(np.uint8)
+    lookup = (cdf * PIXEL_INTENSITY_MAX / cdf[-1]).astype(np.uint8)
 
     # Map original intensity values to their equalized values
-    intensity_eq = np.array(list(map(lambda i: cdf_n[i],
+    intensity_eq = np.array(list(map(lambda i: lookup[i],
                                      translated_intensities))).astype(np.uint8)
 
     # Calculate histogram of equalized intensity values
@@ -243,7 +242,7 @@ def _quantize(im_orig, n_quant, n_iter):
         q_arr[i] = (start + end) / 2
 
     # Initialize errors array
-    error = np.array([0] * n_iter)
+    error = np.array([0] * n_iter).astype(np.uint64)
 
     # Iterate until n_iter exceeded or z_arr did not change
     for j in range(n_iter):
@@ -339,18 +338,61 @@ def quantize_rgb(im_orig, n_quant, n_iter):
                         quantization procedure.
         """
     # Get array of z segments after quantization of yiq intensities
-    z_arr = _quantize(im_orig, n_quant, n_iter)[2]
+    error, z_arr = _quantize(im_orig, n_quant, n_iter)[1:3]
 
     # Calculate histogram of each RGB channel
-    histograms = np.arange(len(RGB_CHANNELS))
+    histograms = list(RGB_CHANNELS)
     for channel in RGB_CHANNELS:
         histograms[channel] = intensity_histogram_translated(
             im_orig[..., channel])
 
     # For each channel in RGB, calculate q values for each z segment
+    q_values = list(RGB_CHANNELS)
     for channel in range(DIMENSIONS_RGB):
+        q_values[channel] = np.arange(n_quant)
         for i in range(len(z_arr) - 1):
             start, end = z_arr[i], z_arr[i + 1] + 1
-            szp = sum(histograms[channel, start:end] * np.arange(start, end))
-            sp = sum(histograms[channel, start:end])
+            szp = sum(histograms[channel][start:end] * np.arange(start, end))
+            sp = sum(histograms[channel][start:end])
+            q_values[channel][i] = szp / sp
 
+    # Build quantization lookup table
+    luts = list(RGB_CHANNELS)
+    for channel in range(DIMENSIONS_RGB):
+        luts[channel] = np.arange(PIXEL_INTENSITIES)
+        for i in range(len(z_arr) - 1):
+            start, end = z_arr[i], z_arr[i + 1]
+            luts[channel][start:end + 1] = q_values[channel][i]
+
+    # Translate [0,1] intensity range to [0,255] integer range
+    im_quant = np.round(im_orig * PIXEL_INTENSITY_MAX).astype(
+        np.uint8)
+
+    # Map intensity values to their quantized values
+    for channel in range(DIMENSIONS_RGB):
+        im_quant[..., channel] = np.array(list(map(lambda i: luts[channel][i],
+                                                   im_quant[..., channel]))).astype(
+            np.uint8)
+
+    # Translate [0,255] intensity range back to [0,1]
+    im_quant = im_quant / PIXEL_INTENSITIES
+
+    # Woohoo!
+    return im_quant, error, z_arr
+
+
+FIFTY_SHADES_ORIGINAL = "fifty_shades_original.jpg"
+FIFTY_SHADES_OUTPUT = "fifty_shades_output_{}.jpg"
+SHADES = 5
+
+
+def main():
+    im = read_image(FIFTY_SHADES_ORIGINAL, MODE_GRAYSCALE)
+    q, e = quantize(im, SHADES, 20)
+    display_image(q, plt.cm.gray)
+    plt.imsave(FIFTY_SHADES_OUTPUT.format(SHADES), q)
+    plt.show()
+
+
+if __name__ == '__main__':
+    main()
