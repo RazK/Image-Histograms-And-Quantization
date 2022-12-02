@@ -1,5 +1,8 @@
 # Image Representations, Intensity Transformations & Quantization
-![input](fifty_shades_original.jpg) ![output](fifty_shades_output_10.jpg)
+![input](demo/histogram_equalization/before_equalization.jpg) ![output](demo/histogram_equalization/after_equalization.jpg)
+<br>Histogram Equalization<br><br>
+![input](demo/optimal_quantization/fifty_shades_original.jpg) ![output](demo/optimal_quantization/fifty_shades_output_3.jpg)
+<br>Optimal Quantization
 
 ## Overview
 This project covers:
@@ -32,6 +35,6 @@ Install ```requirements.txt``` using pip:
 ## Usage
 By default, run it with:
 ```bash
-(venv)$ python sol1.py
+(venv)$ python demo.py
 ```
-To play with different images, open [sol1.py](sol1.py) and edit the code inside ```main()```.
+Refer to [optimal_quantization.py](optimal_quantization.py) and [histogram_equalization.py](histogram_equalization.py) for further details.
